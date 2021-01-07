@@ -1,12 +1,77 @@
+1.0.20
+Issue #1596 support URLs in previousApps in Run-AlValidation
+
+1.0.19
+Move retry algorithm to Download-File
+Run-AlValidation will try to determine which versions to run validation against if not specified
+Run-AlValidation and Run-AlCopys to support that SupportedCountries is optional
+Issue #1573 Regression Setup-TraefikContainerForBcContainers stopped working in 1.0.18
+Issue #1542 Convert-AlcOutputToAzureDevOps wrong error output
+
+1.0.18
+Issue #1556 DotNet Packages for ZipArchive missing in VS Code when creating a Base App
+Issue #1559 Handling of Hungary artifacts
+Issue #1563 Run-AlValidation with multiple apps fails
+Run-AlValidation to support urls as apps, previousapps and installapps
+Add parameter CopySymbolsFromContainer to Compile-AppInBcContainer to speed up symbols download
+Use CopySymbolsFromContainer in Run-AlCops
+Issue #1568 Add publisher parameter to Unpublish and Uninstall app
+Issue #1566 Sign-BcContainerApp doesn't work with SHA256
+Retry algorithm added to Sign-BcContainerApp
+Add Parameter -doNotPublishAdminPort to Setup-TraefikContainerForBcContainers
+Add Parameter -additionalParameters to Setup-TraefikContainerForBcContainers
+Issue #1577 Run-AlValidation and Extract-AppFileToFolder require absolute paths
+Issue #1579 Change default timeStampServer and digestAlgorithm
+
+1.0.17
+Issue #1494 Creating another container based on existing artifact
+Add additional information when publishing through dev Endpoint (instead of just Unprocessible Entity)
+Issue #1530 Not able to Run-AlValidation without previous app.
+Issue #1537 Issue with file lock when creating image
+Use configured containerName in Run-AlCops and Run-AlValidation
+Add parameter -skipAppSourceCop to Run-AlValidation
+Add mapCountryCode to $bcContainerHelperConfig
+Use mapCountryCode in Get-BcArtifactUrl to allow getting artifacts for countries which doesn't have own artifacts
+Use mapCountryCode in Run-AlValidation to allow running validation for all countries (max. 1 time per artifact)
+Issue #1536 Random running Test failure
+Run-AlValidation use single tenant containers by default for performance
+Add resilience to ClientContext::GetAllForms
+Issue #1550 and #1497 add digestAlgorithm parameter to Sign-BcContainerApp
+Run-AlCops (and Run-AlValidation) could ignore error AS0088
+Issue #1552 PowerShell sometimes uses 8-3 notation for $env:temp
+
+1.0.16
+Issue #1516 Sort-AppFoldersByDependencies can't handle twice the same app in the baseFolder
+Issue #1519 Extract-AppFileToFolder doesn't extract internalsVisibleTo in app.json
+Add parameter -SkipUpgrade to allow Run-AlValidation to skip upgrade if previousApps cannot be installed on current version
+Issue #1522 Move files to correct positions
+Issue #1517 Traefik with Run-AlValidation
+Add Text to Run-AlValidation to indicate success or failure
+
+1.0.15
+Use new Generic image location and SQL 2019 image as default (mcr.microsoft.com/businesscentral:{0}-0.1.0.25 is the latest with SQL 2017)
+Issue #1469 Install-NavSipCryptoProvider cannot be executed twice
+Add new function UploadImportAndApply-ConfigPackageInBcContainer, which uses management APIs to Upload, Import and Apply a config package in a container
+Add parameter -ImportTestDataInBcContainer in Run-AlPipeline to allow for overriding and supporting test data
+Add configuration setting: timeStampServer (default timeStampServer for Sign-AppInBcContainer)
+Add parameter timeStampServer to Sign-AppInBcContainer to allow overriding the timeStampServer
+Fix Extract-AppFileToFolder to include missing properties and honor runtime version
+Add parameter vsixFile to Run-AlPipeline
+Add new function Run-AlCops to run AL cops in existing container
+Add new function Run-AlValidation to run and end 2 end AL validation with multiple versions and multiple countries
+Issue #1507 Sort-AppFilesByDependencies crashes if two different versions of the same app is specified
+Issue #1496 Add ruleset parameter to Run-AlPipeline
+Added new function Get-AlLanguageExtensionFromArtifacts to get path of .vsix file within artifacts
+Issue #1506 Add parameter applicationInsightsKey to New-BcContainer and New-BcContainerTenant (note that this requires generic image version 1.0.1.0 or later)
+
 1.0.14
 Add parameter -features to Compile-AppInBcContainer to add support of the alc features parameter
 Add parameter -bakFile to Restore-BcDatabaseFromArtifacts to allow restoring custom database using the artifact binaries
 Issue #1426 performance test samples are installed before performance test toolkit
 Clean-BcContainerDatabase will now cleanup Schema and company when -doNotSaveData is specified
-UnInstall-BcContainerApp will now cleanup Schema when -doNotSaveData is specified
+UnInstall-BcContainerApp will now cleanup Schema when -doNotSaveData is specified together with -doNotSaveSchema
 Regression: Backup-BcContainerDatabases couldn't backup the tenant template database when specified
 Setting default container memory size to 8Gb when using hyperv
-Use mcr.microsoft.com/businesscentral as new generic image repository
 Remove references to specific images
 
 1.0.13

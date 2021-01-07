@@ -12,7 +12,8 @@
  .Parameter containerName
   This is the containerName going to be used for the build/test container. If not specified, the container name will be the pipeline name followed by -bld.
  .Parameter imageName
-  if artifact is specified then imageName is the name of a docker image cache. if artifact is empty, then imageName specified the image to be run.
+  If imageName is specified it will be used to build an image, which serves as a cache for faster container generation.
+  Only speficy imagename if you are going to create multiple containers from the same artifacts.
  .Parameter enableTaskScheduler
   Include this switch if the Task Scheduler should be running inside the build/test container, as some app features rely on the Task Scheduler.
  .Parameter assignPremiumPlan
@@ -77,6 +78,10 @@
   Including the keepContainer switch causes the container to not be deleted after the pipeline finishes.
  .Parameter updateLaunchJson
   Including the updateLaunchJson switch causes the launch.json file in each project to be updated with container information to be able to start debugging right away.
+ .Parameter vsixFile
+  Specify a URL or path to a .vsix file in order to override the .vsix file in the image with this.
+  Use Get-LatestAlLanguageExtensionUrl to get latest AL Language extension from Marketplace.
+  Use Get-AlLanguageExtensionFromArtifacts -artifactUrl (Get-BCArtifactUrl -select NextMajor -sasToken $insiderSasToken) to get latest insider .vsix
  .Parameter enableCodeCop
   Include this switch to include Code Cop Rules during compilation.
  .Parameter enableAppSourceCop
@@ -85,6 +90,10 @@
   Include this switch to include UI Cop during compilation.
  .Parameter enablePerTenantExtensionCop
   Only relevant for Per Tenant Extensions. Include this switch to include Per Tenant Extension Cop during compilation.
+ .Parameter useDefaultAppSourceRuleSet
+  Apply the default ruleset for passing AppSource validation
+ .Parameter rulesetFile
+  Filename of the custom ruleset file
  .Parameter escapeFromCops
   If One of the cops causes an error in an app, then show the error, recompile the app without cops and continue
  .Parameter AppSourceCopMandatoryAffixes
@@ -160,10 +169,13 @@ Param(
     [switch] $doNotRunTests,
     [switch] $keepContainer,
     [string] $updateLaunchJson = "",
+    [string] $vsixFile = "",
     [switch] $enableCodeCop,
     [switch] $enableAppSourceCop,
     [switch] $enableUICop,
     [switch] $enablePerTenantExtensionCop,
+    [switch] $useDefaultAppSourceRuleSet,
+    [string] $rulesetFile = "",
     [switch] $escapeFromCops,
     $AppSourceCopMandatoryAffixes = @(),
     $AppSourceCopSupportedCountries = @(),
@@ -174,6 +186,7 @@ Param(
     [scriptblock] $GetBcContainerAppInfo,
     [scriptblock] $PublishBcContainerApp,
     [scriptblock] $SignBcContainerApp,
+    [scriptblock] $ImportTestDataInBcContainer,
     [scriptblock] $RunTestsInBcContainer,
     [scriptblock] $GetBcContainerAppRuntimePackage,
     [scriptblock] $RemoveBcContainer
@@ -272,6 +285,7 @@ if ($AppSourceCopSupportedCountries -is [String]) { $AppSourceCopSupportedCountr
 $appFolders  = @($appFolders  | ForEach-Object { CheckRelativePath -baseFolder $baseFolder -path $_ -name "appFolders" } | Where-Object { Test-Path $_ } )
 $testFolders = @($testFolders | ForEach-Object { CheckRelativePath -baseFolder $baseFolder -path $_ -name "testFolders" } | Where-Object { Test-Path $_ } )
 $testResultsFile = CheckRelativePath -baseFolder $baseFolder -path $testResultsFile -name "testResultsFile"
+$rulesetFile = CheckRelativePath -baseFolder $baseFolder -path $rulesetFile -name "rulesetFile"
 if (Test-Path $testResultsFile) {
     Remove-Item -Path $testResultsFile -Force
 }
@@ -390,6 +404,8 @@ Write-Host -NoNewLine -ForegroundColor Yellow "enableAppSourceCop          "; Wr
 Write-Host -NoNewLine -ForegroundColor Yellow "enableUICop                 "; Write-Host $enableUICop
 Write-Host -NoNewLine -ForegroundColor Yellow "enablePerTenantExtensionCop "; Write-Host $enablePerTenantExtensionCop
 Write-Host -NoNewLine -ForegroundColor Yellow "escapeFromCops              "; Write-Host $escapeFromCops
+Write-Host -NoNewLine -ForegroundColor Yellow "useDefaultAppSourceRuleSet  "; Write-Host $useDefaultAppSourceRuleSet
+Write-Host -NoNewLine -ForegroundColor Yellow "rulesetFile                 "; Write-Host $rulesetFile
 Write-Host -NoNewLine -ForegroundColor Yellow "azureDevOps                 "; Write-Host $azureDevOps
 Write-Host -NoNewLine -ForegroundColor Yellow "License file                "; if ($licenseFile) { Write-Host "Specified" } else { "Not specified" }
 Write-Host -NoNewLine -ForegroundColor Yellow "CodeSignCertPfxFile         "; if ($codeSignCertPfxFile) { Write-Host "Specified" } else { "Not specified" }
@@ -456,6 +472,9 @@ if ($SignBcContainerApp) {
 }
 else {
     $SignBcContainerApp = { Param([Hashtable]$parameters) Sign-BcContainerApp @parameters }
+}
+if ($ImportTestDataInBcContainer) {
+    Write-Host -ForegroundColor Yellow "ImportTestDataInBcContainer override"; Write-Host $ImportTestDataInBcContainer.ToString()
 }
 if ($RunTestsInBcContainer) {
     Write-Host -ForegroundColor Yellow "RunTestsInBcContainer override"; Write-Host $RunTestsInBcContainer.ToString()
@@ -540,6 +559,7 @@ Measure-Command {
         "useGenericImage" = $useGenericImage
         "Credential" = $credential
         "auth" = 'UserPassword'
+        "vsixFile" = $vsixFile
         "updateHosts" = $true
         "licenseFile" = $licenseFile
         "EnableTaskScheduler" = $enableTaskScheduler
@@ -550,7 +570,7 @@ Measure-Command {
 
     Invoke-Command -ScriptBlock $NewBcContainer -ArgumentList $Parameters
 
-    if ($tenant -ne 'default' -and -not (Get-NavContainerTenants -containerName $containerName | Where-Object { $_.id -eq "default" })) {
+    if ($tenant -ne 'default' -and -not (Get-BcContainerTenants -containerName $containerName | Where-Object { $_.id -eq "default" })) {
 
         $Parameters = @{
             "containerName" = $containerName
@@ -568,16 +588,16 @@ Measure-Command {
         }
         New-BcContainerBcUser @Parameters
 
-        $tenantApps = Get-NavContainerAppInfo -containerName $containerName -tenant $tenant -tenantSpecificProperties -sort DependenciesFirst
-        Get-NavContainerAppInfo -containerName $containerName -tenant "default" -tenantSpecificProperties -sort DependenciesFirst | Where-Object { $_.IsInstalled } | % {
+        $tenantApps = Get-BcContainerAppInfo -containerName $containerName -tenant $tenant -tenantSpecificProperties -sort DependenciesFirst
+        Get-BcContainerAppInfo -containerName $containerName -tenant "default" -tenantSpecificProperties -sort DependenciesFirst | Where-Object { $_.IsInstalled } | % {
             $name = $_.Name
             $version = $_.Version
             $tenantApp = $tenantApps | Where-Object { $_.Name -eq $name -and $_.Version -eq $version }
             if ($tenantApp.SyncState -eq "NotSynced" -or $tenantApp.SyncState -eq 3) {
-                Sync-NavContainerApp -containerName $containerName -tenant $tenant -appName $Name -appVersion $Version -Mode ForceSync -Force
+                Sync-BcContainerApp -containerName $containerName -tenant $tenant -appName $Name -appVersion $Version -Mode ForceSync -Force
             }
             if (-not $tenantApp.IsInstalled) {
-                Install-NavContainerApp -containerName $containerName -tenant $tenant -appName $_.Name -appVersion $_.Version
+                Install-BcContainerApp -containerName $containerName -tenant $tenant -appName $_.Name -appVersion $_.Version
             }
         }
     }
@@ -713,6 +733,37 @@ Write-Host -ForegroundColor Yellow @'
             "EnableUICop" = $enableUICop
             "EnablePerTenantExtensionCop" = $enablePerTenantExtensionCop
         }
+        if ("$rulesetFile" -ne "" -or $useDefaultAppSourceRuleSet) {
+            if ($useDefaultAppSourceRuleSet) {
+                Write-Host "Creating ruleset for pipeline"
+                $ruleset = [ordered]@{
+                    "name" = "Run-AlPipeline RuleSet"
+                    "description" = "Generated by Run-AlPipeline"
+                    "includedRuleSets" = @()
+                }
+                if ($rulesetFile) {
+                    Write-Host "Including custom ruleset"
+                    $ruleset.includedRuleSets += @(@{ 
+                        "action" = "Default"
+                        "path" = Get-BcContainerPath -containerName $containerName -path $ruleSetFile
+                    })
+                }
+                $appSourceRulesetFile = Join-Path $folder "appsource.default.ruleset.json"
+                Download-File -sourceUrl "https://bcartifacts.azureedge.net/rulesets/appsource.default.ruleset.json" -destinationFile $appSourceRulesetFile
+                $ruleset.includedRuleSets += @(@{ 
+                    "action" = "Default"
+                    "path" = Get-BcContainerPath -containerName $containerName -path $appSourceRulesetFile
+                })
+                $RuleSetFile = Join-Path $folder "run-alpipeline.ruleset.json"
+                $ruleset | ConvertTo-Json -Depth 99 | Set-Content $rulesetFile
+            }
+            else {
+                Write-Host "Using custom ruleset"
+            }
+            $CopParameters += @{
+                "ruleset" = $rulesetFile
+            }
+        }
         if ($testApp -and ($enablePerTenantExtensionCop -or $enableAppSourceCop)) {
             Write-Host -ForegroundColor Yellow "WARNING: A Test App cannot be published to production tenants online"
         }
@@ -754,38 +805,12 @@ Write-Host -ForegroundColor Yellow @'
             $previousAppVersions = @{}
             if ($previousApps) {
                 Write-Host "Copying previous apps to packages folder"
-                $previousApps | % {
-                    if ($_ -like "http://*" -or $_ -like "https://*") {
-                        $tmpFileName = [System.IO.Path]::GetFileName($_).split("?")[0]
-                        $tmpFile = Join-Path $appPackagesFolder $tmpFileName
-                        Download-File -sourceUrl $_ -destinationFile $tmpFile
-                        if ($tmpFile -like "*.zip") {
-                            Write-Host "Unpacking $tmpFileName to $appPackagesFolder"
-                            Expand-Archive -Path $tmpFile -DestinationPath $appPackagesFolder
-                            $subFolder = Join-Path $appPackagesFolder $tmpFileName.Trim('.zip')
-                            Get-ChildItem -Path $subFolder -Recurse | ForEach-Object {
-                                Copy-Item -Path $_.FullName -Destination $appPackagesFolder -Force
-                                $AppList += @(Join-Path $appPackagesFolder $_.Name)
-                            }
-                            Remove-Item $subFolder -Recurse -Force
-                            Remove-Item $tmpFile
-                        }
-                        else {
-                            $AppList += @($tmpFile)
-                        }
-                    }
-                    else {
-                        if (-not (Test-Path $appPackagesFolder)) {
-                            New-Item -Path $appPackagesFolder -ItemType Directory | Out-Null
-                        }
-                        Copy-Item -Path $_ -Destination $appPackagesFolder -Force
-                        $AppList += @(Join-Path $appPackagesFolder ([System.IO.Path]::GetFileName($_)))
-                    }
-                }
+                $appList = CopyAppFilesToFolder -appFiles $previousApps -folder $appPackagesFolder
+
                 $previousApps = Sort-AppFilesByDependencies -appFiles $appList
                 $previousApps | ForEach-Object {
                     $appFile = $_
-                    $tmpFolder = Join-Path $ENV:TEMP ([Guid]::NewGuid().ToString())
+                    $tmpFolder = Join-Path (Get-TempDir) ([Guid]::NewGuid().ToString())
                     try {
                         Extract-AppFileToFolder -appFilename $appFile -appFolder $tmpFolder -generateAppJson
                         $xappJsonFile = Join-Path $tmpFolder "app.json"
@@ -1038,6 +1063,46 @@ $testApps | ForEach-Object {
 }
 
 if (!$doNotRunTests) {
+if ($ImportTestDataInBcContainer) {
+Write-Host -ForegroundColor Yellow @'
+  _____                            _   _               _______       _     _____        _        
+ |_   _|                          | | (_)             |__   __|     | |   |  __ \      | |       
+   | |  _ __ ___  _ __   ___  _ __| |_ _ _ __   __ _     | | ___ ___| |_  | |  | | __ _| |_ __ _ 
+   | | | '_ ` _ \| '_ \ / _ \| '__| __| | '_ \ / _` |    | |/ _ \ __| __| | |  | |/ _` | __/ _` |
+  _| |_| | | | | | |_) | (_) | |  | |_| | | | | (_| |    | |  __\__ \ |_  | |__| | (_| | |_ (_| |
+ |_____|_| |_| |_| .__/ \___/|_|   \__|_|_| |_|\__, |    |_|\___|___/\__| |_____/ \__,_|\__\__,_|
+                 | |                            __/ |                                            
+                 |_|                           |___/                                             
+'@
+if (!$enableTaskScheduler) {
+    Invoke-ScriptInBcContainer -containerName $containerName -scriptblock {
+        Write-Host "Enabling Task Scheduler to load configuration packages"
+        Set-NAVServerConfiguration -ServerInstance $ServerInstance -KeyName "EnableTaskScheduler" -KeyValue "True" -WarningAction SilentlyContinue
+        Set-NAVServerInstance -ServerInstance $ServerInstance -Restart
+        while (Get-NavTenant $serverInstance | Where-Object { $_.State -eq "Mounting" }) {
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+
+$Parameters = @{
+    "containerName" = $containerName
+    "tenant" = $tenant
+    "credential" = $credential
+}
+Invoke-Command -ScriptBlock $ImportTestDataInBcContainer -ArgumentList $Parameters
+
+if (!$enableTaskScheduler) {
+    Invoke-ScriptInBcContainer -containerName $containerName -scriptblock {
+        Write-Host "Disabling Task Scheduler again"
+        Set-NAVServerConfiguration -ServerInstance $ServerInstance -KeyName "EnableTaskScheduler" -KeyValue "False" -WarningAction SilentlyContinue
+        Set-NAVServerInstance -ServerInstance $ServerInstance -Restart
+        while (Get-NavTenant $serverInstance | Where-Object { $_.State -eq "Mounting" }) {
+            Start-Sleep -Seconds 1
+        }
+    }
+}
+}
 $allPassed = $true
 $resultsFile = "$($testResultsFile.ToLowerInvariant().TrimEnd('.xml'))$testCountry.xml"
 if ($testFolders) {

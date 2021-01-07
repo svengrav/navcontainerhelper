@@ -157,7 +157,9 @@
   In this scriptblock you can install additional apps or import additional objects in your container.
   These apps/objects will be included in the backup if you specify bakFolder and this script will NOT run if a backup already exists in bakFolder.
  .Parameter vsixFile
-  Specify a URL or path to a .vsix file in order to override the .vsix file in the image with this
+  Specify a URL or path to a .vsix file in order to override the .vsix file in the image with this.
+  Use Get-LatestAlLanguageExtensionUrl to get latest AL Language extension from Marketplace.
+  Use Get-AlLanguageExtensionFromArtifacts -artifactUrl (Get-BCArtifactUrl -select NextMajor -sasToken $insiderSasToken) to get latest insider .vsix
  .Example
   New-BcContainer -accept_eula -containerName test
  .Example
@@ -251,6 +253,7 @@ function New-BcContainer {
         [switch] $doNotCheckHealth,
         [switch] $doNotUseRuntimePackages = $true,
         [string] $vsixFile = "",
+        [string] $applicationInsightsKey,
         [scriptblock] $finalizeDatabasesScriptBlock
     )
 
@@ -549,8 +552,19 @@ function New-BcContainer {
     if (!($PSBoundParameters.ContainsKey('useTraefik'))) {
         $traefikForBcBasePath = "c:\programdata\bccontainerhelper\traefikforbc"
         if (Test-Path -Path (Join-Path $traefikForBcBasePath "traefik.txt") -PathType Leaf) {
-            Write-Host -ForegroundColor Yellow "WARNING: useTraefik not specified, but Traefik container was initialized, using Traefik. Specify -useTraefik:`$false if you do NOT want to use Traefik."
-            $useTraefik = $true
+            if (-not $PublicDnsName) {
+                $wwwRootPath = Get-WWWRootPath
+                if ($wwwRootPath) {
+                    $hostNameTxtFile = Join-Path $wwwRootPath "hostname.txt"
+                    if ((Test-Path $hostNameTxtFile) -and -not $PublicDnsName) {
+                        $PublicDnsName = Get-Content -Path $hostNameTxtFile
+                    }
+                }
+            }
+            if ($publicDnsName) {
+                Write-Host -ForegroundColor Yellow "WARNING: useTraefik not specified, but Traefik container was initialized, using Traefik. Specify -useTraefik:`$false if you do NOT want to use Traefik."
+                $useTraefik = $true
+            }
         }
     }
 
@@ -566,7 +580,7 @@ function New-BcContainer {
         }
 
         if ($PublishPorts.Count -gt 0 -or
-            $WebClientPort -or $FileSharePort -or $ManagementServicesPort -or $ClientServicesPort -or 
+            $WebClientPort -or $FileSharePort -or $ManagementServicesPort -or 
             $SoapServicesPort -or $ODataServicesPort -or $DeveloperServicesPort) {
             throw "When using Traefik, all external communication comes in through port 443, so you can't change the ports"
         }
@@ -578,9 +592,12 @@ function New-BcContainer {
             Write-Host "Enabling SSL as otherwise all clients will see mixed HTTP / HTTPS request, which will cause problems e.g. on the mobile and modern windows clients"
             $useSSL = $true
         }
-
-        if ((Test-Path "C:\inetpub\wwwroot\hostname.txt") -and -not $PublicDnsName) {
-            $PublicDnsName = Get-Content -Path "C:\inetpub\wwwroot\hostname.txt" 
+        $wwwRootPath = Get-WWWRootPath
+        if ($wwwRootPath) {
+            $hostNameTxtFile = Join-Path $wwwRootPath "hostname.txt"
+            if ((Test-Path $hostNameTxtFile) -and -not $PublicDnsName) {
+                $PublicDnsName = Get-Content -Path $hostNameTxtFile
+            }
         }
         if (-not $PublicDnsName) {
             throw "Using Traefik only makes sense if you allow external access, so you have to provide the public DNS name (param -PublicDnsName)"
@@ -694,6 +711,10 @@ function New-BcContainer {
 
     if ($clickonce) {
         $parameters += "--env clickonce=Y"
+    }
+
+    if ($applicationInsightsKey) {
+        $parameters += "--env applicationInsightsInstrumentationKey=$applicationInsightsKey"
     }
 
     if ($WebClientPort) {
@@ -1198,7 +1219,10 @@ function New-BcContainer {
             throw "Database backup $bakFile doesn't exist"
         }
         
-        if (-not $bakFile.StartsWith($hostHelperFolder, [StringComparison]::OrdinalIgnoreCase)) {
+        if ($bakFile.StartsWith($hostHelperFolder, [StringComparison]::OrdinalIgnoreCase)) {
+            $bakFile = "$containerHelperFolder$($bakFile.Substring($hostHelperFolder.Length))"
+        }
+        else {
             $containerBakFile = Join-Path $containerFolder "database.bak"
             Copy-Item -Path $bakFile -Destination $containerBakFile
             $bakFile = $containerBakFile
@@ -1940,7 +1964,7 @@ if (-not `$restartingInstance) {
 
             $serviceTierFolder = (Get-Item "C:\Program Files\Microsoft Dynamics NAV\*\Service").FullName
 
-            $paths = @("C:\Windows\assembly", $serviceTierFolder)
+            $paths = @("C:\Windows\assembly", "C:\Windows\Microsoft.NET\assembly", $serviceTierFolder)
 
             $rtcFolder = "C:\Program Files (x86)\Microsoft Dynamics NAV\*\RoleTailored Client"
             if (Test-Path $rtcFolder -PathType Container) {
@@ -1953,8 +1977,16 @@ if (-not `$restartingInstance) {
             $paths += "C:\Program Files (x86)\Open XML SDK"
 
             $paths | % {
+                $localPath = Join-Path $dotnetAssembliesFolder ([System.IO.Path]::GetFileName($_))
+                if (!(Test-Path $localPath)) {
+                    New-Item -Path $localPath -ItemType Directory -Force | Out-Null
+                }
                 Write-Host "Copying DLLs from $_ to assemblyProbingPath"
-                Copy-Item -Path $_ -Destination $dotnetAssembliesFolder -Force -Recurse -Filter "*.dll"
+                Get-ChildItem -Path $_ -Filter *.dll -Recurse | % {
+                    if (!(Test-Path (Join-Path $localPath $_.Name))) {
+                        Copy-Item -Path $_.FullName -Destination $localPath -Force -ErrorAction SilentlyContinue
+                    }
+                }
             }
 
             $serviceTierAddInsFolder = Join-Path $serviceTierFolder "Add-ins"

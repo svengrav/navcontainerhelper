@@ -1,20 +1,19 @@
 ﻿$navArtifactUrl = Get-NavArtifactUrl -nav 2018 -cu 17 -country w1
-$navImageName = New-BcImage -artifactUrl $navArtifactUrl
+$navImageName = New-BcImage -artifactUrl $navArtifactUrl -skipIfImageAlreadyExists
 $navContainerName = 'nav'
-$navContainerPlatformVersion = ''
-$navContainerPath = Join-Path "C:\ProgramData\BcContainerHelper\Extensions" $navContainerName
+$navContainerPlatformVersion = '11.0.31747.0'
+$navContainerPath = Join-Path $bcContainerHelperConfig.hostHelperFolder "Extensions\$navContainerName"
 $navMyPath = Join-Path $navContainerPath "my"
 New-NavContainer -accept_eula `
                  -accept_outdated `
                  -containerName $navContainerName `
                  -artifactUrl $navArtifactUrl `
-                 -imageName "myimage" `
+                 -imagename $navImageName `
                  -auth NavUserPassword `
                  -Credential $credential `
                  -updateHosts `
-                 -memoryLimit 16g `
+                 -memoryLimit 8g `
                  -licenseFile $licenseFile `
                  -includeCSide `
                  -includeTestToolkit `
-                 -includeTestLibrariesOnly `
-                 -useBestContainerOS
+                 -includeTestLibrariesOnly

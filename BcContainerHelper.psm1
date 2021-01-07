@@ -29,7 +29,38 @@ function Get-ContainerHelperConfig {
             "hostHelperFolder" = "C:\ProgramData\BcContainerHelper"
             "containerHelperFolder" = "C:\ProgramData\BcContainerHelper"
             "defaultContainerName" = "bcserver"
+            "digestAlgorithm" = "SHA256"
+            "timeStampServer" = "http://timestamp.digicert.com"
             "sandboxContainersAreMultitenantByDefault" = $true
+            "mapCountryCode" = [PSCustomObject]@{
+                "ae" = "w1"
+                "br" = "w1"
+                "co" = "w1"
+                "ee" = "w1"
+                "fo" = "dk"
+                "gl" = "dk"
+                "hk" = "w1"
+                "hr" = "w1"
+                "hu" = "w1"
+                "id" = "w1"
+                "ie" = "w1"
+                "jp" = "w1"
+                "kr" = "w1"
+                "lt" = "w1"
+                "lv" = "w1"
+                "my" = "w1"
+                "pe" = "w1"
+                "ph" = "w1"
+                "pl" = "w1"
+                "rs" = "w1"
+                "ro" = "w1"
+                "sg" = "w1"
+                "si" = "w1"
+                "th" = "w1"
+                "tw" = "w1"
+                "vn" = "w1"
+                "za" = "w1"
+            }
         }
         $bcContainerHelperConfigFile = Join-Path $bcContainerHelperConfig.HostHelperFolder "BcContainerHelper.config.json"
         if (Test-Path $bcContainerHelperConfigFile) {
@@ -166,6 +197,7 @@ Check-BcContainerHelperPermissions -Silent
 . (Join-Path $PSScriptRoot "ContainerHandling\Setup-TraefikContainerForNavContainers.ps1")
 . (Join-Path $PSScriptRoot "ContainerHandling\Flush-ContainerHelperCache.ps1")
 . (Join-Path $PSScriptRoot "ContainerHandling\Get-LatestAlLanguageExtensionUrl.ps1")
+. (Join-Path $PSScriptRoot "ContainerHandling\Get-AlLanguageExtensionFromArtifacts.ps1")
 
 # Object Handling functions
 . (Join-Path $PSScriptRoot "ObjectHandling\Export-NavContainerObjects.ps1")
@@ -208,6 +240,8 @@ Check-BcContainerHelperPermissions -Silent
 . (Join-Path $PSScriptRoot "AppHandling\Sort-AppFoldersByDependencies.ps1")
 . (Join-Path $PSScriptRoot "AppHandling\Sort-AppFilesByDependencies.ps1")
 . (Join-Path $PSScriptRoot "AppHandling\Run-AlPipeline.ps1")
+. (Join-Path $PSScriptRoot "AppHandling\Run-AlValidation.ps1")
+. (Join-Path $PSScriptRoot "AppHandling\Run-AlCops.ps1")
 . (Join-Path $PSScriptRoot "AppHandling\Publish-PerTenantExtensionApps.ps1")
 . (Join-Path $PSScriptRoot "AppHandling\Publish-BuildOutputToStorage.ps1")
 
@@ -263,6 +297,7 @@ Check-BcContainerHelperPermissions -Silent
 # Configuration Package Handling
 . (Join-Path $PSScriptRoot "ConfigPackageHandling\Import-ConfigPackageInNavContainer.ps1")
 . (Join-Path $PSScriptRoot "ConfigPackageHandling\Remove-ConfigPackageInNavContainer.ps1")
+. (Join-Path $PSScriptRoot "ConfigPackageHandling\UploadImportAndApply-ConfigPackageInBcContainer.ps1")
 
 # Symbol Handling
 . (Join-Path $PSScriptRoot "SymbolHandling\Generate-SymbolsInNavContainer.ps1")
